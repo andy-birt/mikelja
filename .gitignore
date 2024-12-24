@@ -1,5 +1,6 @@
-mikel
-mikelja.egg-info
+mikel/
+mikelja.egg-info/
+dist/
 .env
 .vscode
 __pycache__
