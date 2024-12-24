@@ -1,5 +1,12 @@
 ## Quick Start
 
+Install package
+```bash
+> pip install mikelja
+```
+
+## Quick Start (if cloning)
+
 Once you clone this, create a virtual environment
 ```bash
 > python -m venv venv
@@ -21,6 +28,8 @@ Install Dependencies
 > pip install -r requirements.txt
 ```
 
+## Quick Test
+
 Get started quickly by testing with Remotive since you don't need a key
 ```python
 from apis import Remotive
@@ -36,6 +45,7 @@ r = test_search.get_results()
 # please work...
 print(r)
 ```
+## Config
 
 Create a `.env` file to keep your credentials
 ```env
