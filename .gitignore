@@ -3,4 +3,5 @@ mikelja.egg-info/
 dist/
 .env
 .vscode
+setup.py
 __pycache__
