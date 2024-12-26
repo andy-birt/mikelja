@@ -17,3 +17,6 @@ LINKEDIN_PASSWORD = os.getenv("LINKEDIN_PASSWORD")
 # Usajobs
 USAJOBS_API_KEY = os.getenv("USAJOBS_API_KEY")
 USAJOBS_EMAIL   = os.getenv("USAJOBS_EMAIL")
+
+# Webdriver
+DRIVER_PATH     = os.getenv("DRIVER_PATH")
