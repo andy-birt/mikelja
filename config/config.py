@@ -20,3 +20,5 @@ USAJOBS_EMAIL   = os.getenv("USAJOBS_EMAIL")
 
 # Webdriver
 DRIVER_PATH     = os.getenv("DRIVER_PATH")
+
+DEBUG_SCREENSHOT_DIR = os.getenv("DEBUG_SCREENSHOT_DIR")

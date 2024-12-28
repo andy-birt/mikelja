@@ -1,23 +1,11 @@
-import requests
-from bs4 import BeautifulSoup
 import time
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from config import LINKEDIN_PASSWORD, LINKEDIN_USERNAME, DRIVER_PATH
+from selenium.webdriver.common.action_chains import ActionChains
+from config import LINKEDIN_PASSWORD, LINKEDIN_USERNAME, DRIVER_PATH, DEBUG_SCREENSHOT_DIR
 class Linkedin:
-
-    # Need a way to identify the elements on a page as these change over time.
-
-    # 1. Simulate going to Linkedin website
-    # 2. Login with burner creds
-    # 3. Simulate a job search - set search filters
-    # 4. Inital scrape
-    #   a. Get jobs on first page and selected details.
-
-    # This is the URL I had when searching Linkedin and wasn't restricted to seeing 3 jobs as a guest
-    # https://www.linkedin.com/jobs/search?keywords=python&location=United%20States&geoId=103644278&trk=public_jobs_jobs-search-bar_search-submit&position=1&pageNum=0
 
     BASE_URL = "https://www.linkedin.com"
     JOBS_URL = BASE_URL + "/jobs"
@@ -36,6 +24,7 @@ class Linkedin:
         options.add_argument("--disable-logging")  # Suppress unnecessary logging
         options.add_argument("--log-level=3")  # Minimize log output
         options.add_argument("--disable-blink-features=WebRTC")  # Disables WebRTC-related features
+        options.add_argument("--window-size=1920,1080")  # Set a suitable window size
 
         self.driver = webdriver.Chrome(service=self.service, options=options)
 
@@ -51,7 +40,7 @@ class Linkedin:
         password_field.send_keys(LINKEDIN_PASSWORD)
         remember_me = form.find_element(by=By.ID, value="rememberMeOptIn-checkbox")
         if remember_me.is_selected:
-            print("don't remember me")
+            print("--Don't remember me")
             label = form.find_element(By.CSS_SELECTOR, "label[for='rememberMeOptIn-checkbox']")
             label.click()
         submit_button = form.find_element(by=By.TAG_NAME, value="button")
@@ -61,6 +50,8 @@ class Linkedin:
             print("Login successful!")
         else:
             print("Login failed.")
+            raise Exception("Login Failed.")
+        time.sleep(2)
 
     def begin_search(self):
         d = self.driver
@@ -81,64 +72,95 @@ class Linkedin:
             print("Logging in...")
             self.login()
             self.set_search_criteria()
-            # d.get(self.RESOURCE)
-        job_containers = d.find_elements(By.CLASS_NAME, "job-card-container")
+            self.scroll_to_bottom_of_listings()
+        job_containers = d.find_elements(By.CSS_SELECTOR, "div.scaffold-layout__list > div > ul > li")
         job_elements = []
         for i, job in enumerate(job_containers):
-            # attribute data-job-id                                             = external_job_id
-            external_job_id = job.get_attribute("data-job-id")
-            # class     job-card-list__title--link      attribute   aria-label  = job_title
-            job_card_link   = job.find_element(By.CLASS_NAME, "job-card-list__title--link")
-            job_title       = job_card_link.text.split("\n")[0]
-            # class     artdeco-entity-lockup__subtitle                         = company
-            company         = job.find_element(By.CLASS_NAME, "artdeco-entity-lockup__subtitle").text
-            # class     artdeco-entity-lockup__caption                          = location
-            location        = job.find_element(By.CLASS_NAME, "artdeco-entity-lockup__caption").text
-            # id        job-details                                             = description
-            if i != 0:
-                job_card_link.click()
-            description     = d.find_element(By.ID, "job-details").text
+            time.sleep(1)
+            try:
+                job_details = self.get_job_details(job)
+            except:
+                print("Creating screenshot..")
+                d.save_screenshot(f"{DEBUG_SCREENSHOT_DIR}debug.png")
+                self.scroll_to(job)
+                job_details = self.get_job_details(job, i)
 
-            scraped_job = {
-                "external_job_id"   : external_job_id,
-                "job_title"         : job_title,
-                "company"           : company,
-                "location"          : location,
-                "description"       : description,
-                "source"            : "Linkedin"
-            }
-
-            job_elements.append(scraped_job)
-
+            job_elements.append(job_details)
+            print("Job imported")
+        print("Returning job elements..")
         return job_elements
     
     def set_search_criteria(self):
+        print("Setting search criteria..")
         d = self.driver
         d.get(f"{self.JOBS_RESOURCE}/?keywords={self.params["keywords"]}&location={self.params["location"]}")
         time.sleep(2)
-        # search_keyword_input  = d.find_element(By.CSS_SELECTOR, "[aria-label='Search by title, skill, or company']")
-        # search_location_input = d.find_element(By.CSS_SELECTOR, "[aria-label='City, state, or zip code']")
 
-        # Search by this keyword/location
-        # search_keyword_input.send_keys(self.params["keywords"])
-        # search_location_input.send_keys(self.params["location"])
-
-        # submit_search_button = d.find_element(By.CLASS_NAME, "jobs-search-box__submit-button")
-        # d.execute_script("arguments[0].click();", submit_search_button)
-
-        # Now let's make sure we're only looking for jobs based on our other filters
+        print("Set advanced filters..")
         advanced_filters = d.find_element(By.CSS_SELECTOR, "[aria-label='Show all filters. Clicking this button displays all available filter options.']")
         advanced_filters.click()
-        
+        time.sleep(1)
         # For now I'm going to hardcode all of my filters
+        print("...")
         d.find_element(By.CSS_SELECTOR, "[for='advanced-filter-timePostedRange-r86400']").click()
         d.find_element(By.CSS_SELECTOR, "[for='advanced-filter-workplaceType-2']").click()
         d.find_element(By.CSS_SELECTOR, "[aria-label^='Apply current filters']").click()
+        print("Filters applied.")
+
+    def scroll_to_bottom_of_listings(self):
+        print("Scroll to bottom..")
+        d = self.driver
+        job_list = d.find_element(By.CSS_SELECTOR, "div.scaffold-layout__list > div")
+        last_height = d.execute_script("return arguments[0].scrollHeight", job_list)
+        while True:
+            d.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", job_list)
+            d.execute_script("arguments[0].dispatchEvent(new Event('scroll'))", job_list)
+            time.sleep(0.5)
+            new_height = d.execute_script("return arguments[0].scrollHeight", job_list)
+            if new_height == last_height:
+                break
+            last_height = new_height
+        time.sleep(2)
+        print("Scroll complete.")
+
+    def get_job_details(self, job, i):
+        # attribute data-job-id                                             = external_job_id
+        external_job_id = job.find_element(By.CLASS_NAME, "job-card-container").get_attribute("data-job-id")
+        # class     job-card-list__title--link      attribute   aria-label  = job_title
+        print(f"Found job with id: {external_job_id}")
+        job_card_link   = job.find_element(By.CLASS_NAME, "job-card-list__title--link")
+        job_title       = job_card_link.text.split("\n")[0]
+        # class     artdeco-entity-lockup__subtitle                         = company
+        company         = job.find_element(By.CLASS_NAME, "artdeco-entity-lockup__subtitle").text
+        # class     artdeco-entity-lockup__caption                          = location
+        location        = job.find_element(By.CLASS_NAME, "artdeco-entity-lockup__caption").text
+        # id        job-details                                             = description
+        if i != 0:
+            job_card_link.click()
+        description     = self.driver.find_element(By.ID, "job-details").text
+
+        return {
+            "external_job_id"   : external_job_id,
+            "job_title"         : job_title,
+            "company"           : company,
+            "location"          : location,
+            "description"       : description,
+            "source"            : "Linkedin"
+        }
+
+    def scroll_to(self, element):
+        ActionChains(self.driver)\
+            .move_to_element(element)\
+            .pause(1)\
+            .perform()
+        time.sleep(1)
+
 
     def get_results(self):
         try:
             return self.begin_search()
         except Exception as e:
+            self.driver.save_screenshot(f"{DEBUG_SCREENSHOT_DIR}debug-exception.png")
             return { "error": str(e) }
         finally:
             self.driver.quit()

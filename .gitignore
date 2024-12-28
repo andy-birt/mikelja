@@ -5,3 +5,4 @@ dist/
 .vscode
 setup.py
 __pycache__
+research_notes.txt
