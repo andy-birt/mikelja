@@ -1,4 +1,5 @@
 import time
+import json
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -14,9 +15,7 @@ class Linkedin:
     
     def __init__(self, params = None):
         self.params = params
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-        }
+        self.job_search_url = f"{self.JOBS_RESOURCE}/?keywords={params["keywords"]}&location={params["location"]}"
 
         options = Options()
         options.add_argument("--headless")
@@ -28,7 +27,17 @@ class Linkedin:
 
         self.driver = webdriver.Chrome(service=self.service, options=options)
 
+    def get_jobs(self):
+        try:
+            return self.begin_search()
+        except Exception as e:
+            self.driver.save_screenshot(f"{DEBUG_SCREENSHOT_DIR}debug-exception.png")
+            return { "error": str(e) }
+        finally:
+            self.driver.quit()
+
     def login(self):
+        print("Logging in...")
         url = "https://www.linkedin.com/login"
         d = self.driver
         d.get(url)
@@ -38,24 +47,22 @@ class Linkedin:
         password_field = form.find_element(by=By.ID, value="password")
         username_field.send_keys(LINKEDIN_USERNAME)
         password_field.send_keys(LINKEDIN_PASSWORD)
-        remember_me = form.find_element(by=By.ID, value="rememberMeOptIn-checkbox")
-        if remember_me.is_selected:
-            print("--Don't remember me")
-            label = form.find_element(By.CSS_SELECTOR, "label[for='rememberMeOptIn-checkbox']")
-            label.click()
         submit_button = form.find_element(by=By.TAG_NAME, value="button")
         submit_button.click()
         current_url = self.driver.current_url
         if "linkedin.com/feed/" in current_url:
             print("Login successful!")
+            self.save_cookies()
+        elif self.is_challenge() :
+            print("Solve Captcha")
+            self.acknowledge_security_check()
         else:
             print("Login failed.")
             raise Exception("Login Failed.")
         time.sleep(2)
 
-    def begin_search(self):
+    def login_if_necessary(self):
         d = self.driver
-        d.get(self.BASE_URL)
         nav_tags = d.find_elements(By.TAG_NAME, "nav")
         script_tags = d.find_elements(By.TAG_NAME, "script")
         is_too_many_requests = False
@@ -69,24 +76,43 @@ class Linkedin:
             if "sign in" in text:
                 is_signin_required = True
         if is_signin_required or is_too_many_requests or "sign up" in d.title.lower():
-            print("Logging in...")
             self.login()
-            self.set_search_criteria()
-            self.scroll_to_bottom_of_listings()
-        job_containers = d.find_elements(By.CSS_SELECTOR, "div.scaffold-layout__list > div > ul > li")
-        job_elements = []
-        for i, job in enumerate(job_containers):
-            time.sleep(1)
-            try:
-                job_details = self.get_job_details(job)
-            except:
-                print("Creating screenshot..")
-                d.save_screenshot(f"{DEBUG_SCREENSHOT_DIR}debug.png")
-                self.scroll_to(job)
-                job_details = self.get_job_details(job, i)
 
-            job_elements.append(job_details)
-            print("Job imported")
+    def begin_search(self):
+        job_elements = []
+        print("Beginning search")
+        d = self.driver
+        d.get(self.job_search_url)
+        time.sleep(5)
+        self.set_cookies()
+        d.refresh()
+        self.login_if_necessary()
+        self.set_search_criteria()
+        
+        current_page = 1
+        last_page = 10
+        while current_page <= last_page:
+            print(f"current_page: {current_page}")
+            self.scroll_to_bottom_of_listings()
+            job_containers = d.find_elements(By.CSS_SELECTOR, "div.scaffold-layout__list > div > ul > li")
+            for i, job in enumerate(job_containers):
+                time.sleep(1)
+                try:
+                    job_details = self.get_job_details(job, i)
+                except:
+                    self.scroll_to(job)
+                    job_details = self.get_job_details(job, i)
+                job_elements.append(job_details)
+                print(f"Job {job_details["external_job_id"]} imported")
+            print("Going to the next page..")
+            # Something is wrong here...
+            try:
+                d.find_element(By.CSS_SELECTOR, "[aria-label='View next page']").click()
+            except:
+                self.scroll_to_bottom_of_listings()
+                d.find_element(By.CSS_SELECTOR, "[aria-label='View next page']").click()
+            time.sleep(3)
+            current_page += 1
         print("Returning job elements..")
         return job_elements
     
@@ -105,6 +131,7 @@ class Linkedin:
         d.find_element(By.CSS_SELECTOR, "[for='advanced-filter-timePostedRange-r86400']").click()
         d.find_element(By.CSS_SELECTOR, "[for='advanced-filter-workplaceType-2']").click()
         d.find_element(By.CSS_SELECTOR, "[aria-label^='Apply current filters']").click()
+        time.sleep(3)
         print("Filters applied.")
 
     def scroll_to_bottom_of_listings(self):
@@ -155,12 +182,32 @@ class Linkedin:
             .perform()
         time.sleep(1)
 
+    def get_active_page(self):
+        return int(self.driver.find_element(By.CSS_SELECTOR, "button[aria-current='page']").text)
 
-    def get_results(self):
+    def acknowledge_security_check(self):
+        time.sleep(5)
+        raise Exception("Captcha check")
+
+    def is_challenge(self):
         try:
-            return self.begin_search()
-        except Exception as e:
-            self.driver.save_screenshot(f"{DEBUG_SCREENSHOT_DIR}debug-exception.png")
-            return { "error": str(e) }
+            h1 = self.driver.find_element(By.TAG_NAME, "h1")
+            return h1.text == "Let’s do a quick security check"
+        except:
+            return False
+
+    def save_cookies(self):
+        with open("cookies.json", "w") as file:
+            json.dump(self.driver.get_cookies(), file, indent=4)
+
+    def set_cookies(self):
+        cookies = []
+        try:
+            with open("cookies.json", "r") as file:
+                cookies = json.load(file)
+        except FileNotFoundError:
+            with open("cookies.json", "w") as file:
+                file.write("[]")
         finally:
-            self.driver.quit()
+            for cookie in cookies:
+                self.driver.add_cookie(cookie)

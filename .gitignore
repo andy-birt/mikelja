@@ -6,3 +6,4 @@ dist/
 setup.py
 __pycache__
 research_notes.txt
+cookies.json

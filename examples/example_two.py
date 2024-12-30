@@ -9,6 +9,6 @@ from scrapers import Linkedin
 
 test = Linkedin(params={ "keywords": "python", "location": "United States" })
 
-r = test.get_results()
+r = test.get_jobs()
 
 print(r)
