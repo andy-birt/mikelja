@@ -107,10 +107,10 @@ class Linkedin:
             print("Going to the next page..")
             # Something is wrong here...
             try:
-                d.find_element(By.CSS_SELECTOR, "[aria-label='View next page']").click()
+                self.go_to_page(current_page + 1)
             except:
                 self.scroll_to_bottom_of_listings()
-                d.find_element(By.CSS_SELECTOR, "[aria-label='View next page']").click()
+                self.go_to_page(current_page + 1)
             time.sleep(3)
             current_page += 1
         print("Returning job elements..")
@@ -184,6 +184,9 @@ class Linkedin:
 
     def get_active_page(self):
         return int(self.driver.find_element(By.CSS_SELECTOR, "button[aria-current='page']").text)
+    
+    def go_to_page(self, page):
+        self.driver.find_element(By.CSS_SELECTOR, f"[aria-label='Page {page}']").click()
 
     def acknowledge_security_check(self):
         time.sleep(5)
